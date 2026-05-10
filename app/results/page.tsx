@@ -23,10 +23,11 @@ function ResultsContent() {
   const [error, setError]     = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Controls
+  // Controls — initialised from URL params set on the home page
   const [paletteSizeUI, setPaletteSizeUI] = useState(6);
   const [paletteSize, setPaletteSize]     = useState(6);
-  const [excludeBackground, setExcludeBackground] = useState(false);
+  const [excludeGrayscale, setExcludeGrayscale]   = useState(() => params.get("exgray")  === "1");
+  const [excludeBackground, setExcludeBackground] = useState(() => params.get("exbg")    === "1");
 
   // Debounce palette size — avoids re-extraction on every slider tick
   useEffect(() => {
@@ -148,32 +149,26 @@ function ResultsContent() {
             />
           )}
 
+          {/* Controls — visible as soon as data loads, not gated on images */}
+          {!loading && data && data.images.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 border-b border-ink-100 mb-6">
+              <div className="flex items-center gap-3">
+                <span className="label-uppercase whitespace-nowrap">Palette size</span>
+                <input
+                  type="range" min={3} max={10} step={1}
+                  value={paletteSizeUI}
+                  onChange={e => setPaletteSizeUI(Number(e.target.value))}
+                  className="w-28 accent-ink-900 cursor-pointer"
+                />
+                <span className="font-mono text-[11px] text-ink-500 w-3 text-right tabular-nums">{paletteSizeUI}</span>
+              </div>
+              <Toggle checked={excludeGrayscale}  onChange={setExcludeGrayscale}  label="Exclude grayscale & sepia" />
+              <Toggle checked={excludeBackground} onChange={setExcludeBackground} label="Exclude background colors" />
+            </div>
+          )}
+
           {hasResults && (
             <div className="space-y-6">
-
-              {/* Controls */}
-              <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 border-b border-ink-100">
-                <div className="flex items-center gap-3">
-                  <span className="label-uppercase whitespace-nowrap">Palette size</span>
-                  <input
-                    type="range"
-                    min={3}
-                    max={10}
-                    step={1}
-                    value={paletteSizeUI}
-                    onChange={e => setPaletteSizeUI(Number(e.target.value))}
-                    className="w-28 accent-ink-900 cursor-pointer"
-                  />
-                  <span className="font-mono text-[11px] text-ink-500 w-3 text-right tabular-nums">
-                    {paletteSizeUI}
-                  </span>
-                </div>
-                <Toggle
-                  checked={excludeBackground}
-                  onChange={setExcludeBackground}
-                  label="Exclude background colors"
-                />
-              </div>
 
               {/* Metadata row */}
               <p className="label-uppercase">
@@ -198,6 +193,7 @@ function ResultsContent() {
                       index={i}
                       topic={data.title}
                       paletteSize={paletteSize}
+                      excludeGrayscale={excludeGrayscale}
                       excludeBackground={excludeBackground}
                       onFiltered={() => handleFiltered(img.url)}
                     />

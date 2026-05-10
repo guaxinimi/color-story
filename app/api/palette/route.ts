@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 const UA = "ColorStory/1.0 (https://github.com/guaxinimi/color-story)";
 const BLOCKED_MIME = new Set(["image/svg+xml", "image/gif", "image/tiff", "image/x-xcf"]);
+const BLOCKED_KW = [
+  "logo", "icon", "flag", "seal", "coa", "emblem", "coat_of_arms",
+  "pictogram", "map", "graph", "chart", "diagram", "stamp",
+  "commons-logo", "wikidata", "question_mark", "ambox", "wikisource",
+  "symbol", "button", "arrow", "banner", "badge",
+];
 
 interface PaletteImage { url: string; alt: string; caption: string }
 
@@ -54,7 +60,9 @@ export async function GET(req: NextRequest) {
       images = pages
         .filter(p => {
           const info = (p.imageinfo as { url?: string; mime?: string }[])?.[0];
-          return info?.url && !BLOCKED_MIME.has(info.mime ?? "");
+          if (!info?.url || BLOCKED_MIME.has(info.mime ?? "")) return false;
+          const title = ((p.title as string) ?? "").toLowerCase();
+          return !BLOCKED_KW.some(kw => title.includes(kw));
         })
         .map(p => {
           const info = (p.imageinfo as { url: string; mime: string; thumburl?: string }[])[0];
