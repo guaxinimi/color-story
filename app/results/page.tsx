@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, useCallback, Fragment } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import ImagePaletteCard from "@/components/ImagePaletteCard";
+import { useSearchHistory } from "@/hooks/useSearchHistory";
 
 interface PaletteImage { url: string; alt: string; caption: string }
 
@@ -17,7 +18,8 @@ interface PaletteData {
 
 function ResultsContent() {
   const params = useSearchParams();
-  const query = params.get("q") ?? "";
+  const router = useRouter();
+  const query  = params.get("q") ?? "";
 
   const [data, setData]       = useState<PaletteData | null>(null);
   const [error, setError]     = useState<string | null>(null);
@@ -26,15 +28,61 @@ function ResultsContent() {
   // Controls — initialised from URL params set on the home page
   const [paletteSizeUI, setPaletteSizeUI] = useState(6);
   const [paletteSize, setPaletteSize]     = useState(6);
-  const [excludeGrayscale, setExcludeGrayscale]   = useState(() => params.get("exgray")  === "1");
-  const [excludeBackground, setExcludeBackground] = useState(() => params.get("exbg")    === "1");
+  const [excludeGrayscale, setExcludeGrayscale]   = useState(() => params.get("exgray") === "1");
+  const [excludeBackground, setExcludeBackground] = useState(() => params.get("exbg")   === "1");
 
-  // Debounce palette size — avoids re-extraction on every slider tick
+  // Search bar state
+  const [inputQuery, setInputQuery]     = useState(query);
+  const [suggestions, setSuggestions]   = useState<string[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [activeIdx, setActiveIdx]       = useState(-1);
+
+  // Sync input when URL query changes
+  useEffect(() => { setInputQuery(query); }, [query]);
+
+  // Debounce palette size
   useEffect(() => {
     const t = setTimeout(() => setPaletteSize(paletteSizeUI), 350);
     return () => clearTimeout(t);
   }, [paletteSizeUI]);
 
+  // Navigate to a new search, preserving current settings
+  const navigateTo = useCallback((q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) return;
+    const p = new URLSearchParams({ q: trimmed });
+    if (excludeGrayscale)  p.set("exgray", "1");
+    if (excludeBackground) p.set("exbg",   "1");
+    setShowDropdown(false);
+    router.push(`/results?${p}`);
+  }, [router, excludeGrayscale, excludeBackground]);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (activeIdx >= 0 && suggestions[activeIdx]) navigateTo(suggestions[activeIdx]);
+    else if (inputQuery.trim()) navigateTo(inputQuery.trim());
+  };
+
+  // Wikipedia autocomplete
+  useEffect(() => {
+    const q = inputQuery.trim();
+    if (q.length < 2) { setSuggestions([]); setShowDropdown(false); return; }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(q)}&limit=6&namespace=0&format=json&origin=*`
+        );
+        const data = await res.json();
+        const titles: string[] = data[1] ?? [];
+        setSuggestions(titles);
+        setShowDropdown(titles.length > 0);
+        setActiveIdx(-1);
+      } catch {}
+    }, 250);
+    return () => clearTimeout(t);
+  }, [inputQuery]);
+
+  // Fetch palette data
   useEffect(() => {
     if (!query) return;
     setLoading(true);
@@ -51,11 +99,10 @@ function ResultsContent() {
       .finally(() => setLoading(false));
   }, [query]);
 
-  // Active images shown + candidate queue for replacements
-  const [activeImages, setActiveImages]   = useState<PaletteImage[]>([]);
+  // Active images + replacement queue
+  const [activeImages, setActiveImages]     = useState<PaletteImage[]>([]);
   const [candidateQueue, setCandidateQueue] = useState<PaletteImage[]>([]);
 
-  // Initialise on new data — shuffle all 20, show first 5, queue the rest
   useEffect(() => {
     if (!data?.images?.length) { setActiveImages([]); setCandidateQueue([]); return; }
     const shuffled = [...data.images].sort(() => Math.random() - 0.5);
@@ -63,18 +110,17 @@ function ResultsContent() {
     setCandidateQueue(shuffled.slice(5));
   }, [data?.images]);
 
-  // When a card fails quality checks, replace it with the next candidate
   const handleFiltered = useCallback((filteredUrl: string) => {
     setCandidateQueue(prev => {
       const [next, ...rest] = prev;
-      if (!next) {
-        setActiveImages(imgs => imgs.filter(i => i.url !== filteredUrl));
-        return [];
-      }
+      if (!next) { setActiveImages(imgs => imgs.filter(i => i.url !== filteredUrl)); return []; }
       setActiveImages(imgs => imgs.map(i => i.url === filteredUrl ? next : i));
       return rest;
     });
   }, []);
+
+  // Search history for breadcrumbs
+  const searchHistory = useSearchHistory(query);
 
   const hasResults = !loading && !!data && data.images.length > 0;
 
@@ -82,17 +128,91 @@ function ResultsContent() {
     <div className="min-h-screen flex flex-col">
       <Nav />
 
-      {/* ── Article header ── */}
-      <section className="border-b border-ink-100 py-10 px-6">
-        <div className="max-w-5xl mx-auto">
-          <Link
-            href="/"
-            className="label-uppercase inline-flex items-center gap-2 mb-7 hover:text-ink-700 transition-colors"
-          >
-            <BackArrow />
-            New search
-          </Link>
+      {/* ── Header ── */}
+      <section className="border-b border-ink-100 py-8 px-6">
+        <div className="max-w-5xl mx-auto space-y-5">
 
+          {/* Search bar */}
+          <form onSubmit={handleSearch} className="w-full max-w-xl">
+            <div className="relative">
+              <input
+                type="text"
+                value={inputQuery}
+                onChange={e => { setInputQuery(e.target.value); setActiveIdx(-1); }}
+                onFocus={() => { if (suggestions.length > 0) setShowDropdown(true); }}
+                onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                onKeyDown={e => {
+                  if (!showDropdown || !suggestions.length) return;
+                  if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i+1, suggestions.length-1)); }
+                  else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(i-1, -1)); }
+                  else if (e.key === "Escape") { setShowDropdown(false); setActiveIdx(-1); }
+                }}
+                placeholder="Search another topic…"
+                autoComplete="off"
+                className="
+                  w-full pl-4 pr-12 py-2.5
+                  bg-white border border-ink-100
+                  font-sans text-sm text-ink-900 placeholder-ink-300
+                  rounded-none outline-none
+                  focus:border-ink-700 transition-colors duration-200
+                "
+              />
+              <button
+                type="submit"
+                aria-label="Search"
+                className="absolute right-0 top-0 bottom-0 px-3.5 flex items-center text-ink-300 hover:text-ink-900 transition-colors border-l border-ink-100"
+              >
+                <SearchIcon />
+              </button>
+
+              {showDropdown && suggestions.length > 0 && (
+                <ul role="listbox" className="absolute top-full left-0 right-0 z-50 bg-white border border-t-0 border-ink-100 shadow-lg">
+                  {suggestions.map((s, i) => (
+                    <li key={s} role="option" aria-selected={i === activeIdx}>
+                      <button
+                        type="button"
+                        className={`w-full text-left px-4 py-2 font-sans text-sm transition-colors duration-100 ${
+                          i === activeIdx ? "bg-parchment-100 text-ink-900" : "text-ink-700 hover:bg-parchment-50 hover:text-ink-900"
+                        }`}
+                        onMouseDown={e => { e.preventDefault(); navigateTo(s); }}
+                      >
+                        {s}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </form>
+
+          {/* Breadcrumb trail — show if 2+ searches in history */}
+          {searchHistory.length > 1 && (
+            <nav aria-label="Search history" className="flex items-center gap-1 overflow-x-auto pb-0.5">
+              {searchHistory.slice(0, 8).reverse().map((q, i, arr) => (
+                <Fragment key={q}>
+                  {i > 0 && (
+                    <span className="text-ink-200 shrink-0 select-none">/</span>
+                  )}
+                  <button
+                    onClick={() => q !== query && navigateTo(q)}
+                    className={`
+                      shrink-0 font-sans text-xs whitespace-nowrap px-1 py-0.5
+                      transition-colors duration-150
+                      ${q.toLowerCase() === query.toLowerCase()
+                        ? "text-ink-900 tracking-wide label-uppercase"
+                        : "text-ink-300 hover:text-ink-700 tracking-wide label-uppercase"
+                      }
+                    `}
+                    aria-current={q.toLowerCase() === query.toLowerCase() ? "page" : undefined}
+                  >
+                    {q}
+                  </button>
+                </Fragment>
+              ))}
+            </nav>
+          )}
+
+          {/* Article title + description */}
           {loading ? (
             <HeaderSkeleton />
           ) : error ? (
@@ -101,7 +221,7 @@ function ResultsContent() {
               <p className="font-sans text-sm text-red-400">{error}</p>
             </div>
           ) : data ? (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="flex items-start justify-between gap-8 flex-wrap">
                 <h1 className="font-serif text-4xl sm:text-5xl text-ink-900 leading-tight">
                   {data.title}
@@ -120,8 +240,7 @@ function ResultsContent() {
               </div>
               {data.description && (
                 <p className="font-sans text-sm text-ink-500 font-light leading-relaxed max-w-2xl">
-                  {data.description}
-                  {data.description.length >= 299 ? "…" : ""}
+                  {data.description}{data.description.length >= 299 ? "…" : ""}
                 </p>
               )}
             </div>
@@ -133,23 +252,7 @@ function ResultsContent() {
       <section className="py-10 px-6 flex-1">
         <div className="max-w-5xl mx-auto">
 
-          {loading && <LoadingSkeleton />}
-
-          {!loading && error && (
-            <EmptyState
-              heading="Nothing found."
-              body="Try a different search — an artist name, a movement, or a material."
-            />
-          )}
-
-          {!loading && data && data.images.length === 0 && (
-            <EmptyState
-              heading="No paintable images found."
-              body="Try a different topic — an artist, movement, or place."
-            />
-          )}
-
-          {/* Controls — visible as soon as data loads, not gated on images */}
+          {/* Controls — visible as soon as data loads */}
           {!loading && data && data.images.length > 0 && (
             <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 border-b border-ink-100 mb-6">
               <div className="flex items-center gap-3">
@@ -167,24 +270,33 @@ function ResultsContent() {
             </div>
           )}
 
+          {loading && <LoadingSkeleton />}
+
+          {!loading && error && (
+            <EmptyState
+              heading="Nothing found."
+              body="Try a different search — an artist name, a movement, or a material."
+            />
+          )}
+
+          {!loading && data && data.images.length === 0 && (
+            <EmptyState
+              heading="No paintable images found."
+              body="Try a different topic — an artist, movement, or place."
+            />
+          )}
+
           {hasResults && (
             <div className="space-y-6">
-
-              {/* Metadata row */}
               <p className="label-uppercase">
                 {activeImages.length} image{activeImages.length !== 1 ? "s" : ""}
                 &nbsp;&middot;&nbsp;{paletteSizeUI}-color palette each
                 &nbsp;&middot;&nbsp;drawn from {data.images.length} Wikimedia candidates
               </p>
 
-              {/* Cards — keyed by url so replacement triggers fade-up re-entrance */}
               <div className="space-y-4">
                 {activeImages.map((img, i) => (
-                  <div
-                    key={img.url}
-                    className="animate-fade-up"
-                    style={{ animationDelay: `${i * 90}ms` }}
-                  >
+                  <div key={img.url} className="animate-fade-up" style={{ animationDelay: `${i * 90}ms` }}>
                     <ImagePaletteCard
                       key={`${img.url}-${paletteSize}`}
                       url={img.url}
@@ -201,15 +313,11 @@ function ResultsContent() {
                 ))}
               </div>
 
-              {/* Save prompt */}
               <div className="border-t border-ink-100 pt-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <p className="font-sans text-sm text-ink-500 font-light">
                   Like what you see? Save these palettes to your gallery.
                 </p>
-                <Link
-                  href="/gallery"
-                  className="label-uppercase hover:text-ink-700 transition-colors inline-flex items-center gap-1.5"
-                >
+                <Link href="/gallery" className="label-uppercase hover:text-ink-700 transition-colors inline-flex items-center gap-1.5">
                   View gallery
                   <ExternalIcon />
                 </Link>
@@ -225,9 +333,7 @@ function ResultsContent() {
 
 /* ── Toggle ── */
 
-function Toggle({
-  checked, onChange, label,
-}: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="flex items-center gap-2.5 group">
       <div className={`relative w-8 h-4 rounded-full transition-colors duration-200 shrink-0 ${checked ? "bg-ink-900" : "bg-ink-100"}`}>
@@ -243,7 +349,7 @@ function Toggle({
 function HeaderSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="h-12 bg-ink-100 animate-pulse rounded-none w-72" />
+      <div className="h-10 bg-ink-100 animate-pulse rounded-none w-64" />
       <div className="space-y-2">
         <div className="h-3 bg-ink-100 animate-pulse rounded-none w-full max-w-xl" />
         <div className="h-3 bg-ink-100 animate-pulse rounded-none w-2/3 max-w-lg" />
@@ -257,7 +363,7 @@ function LoadingSkeleton() {
     <div className="space-y-4">
       <div className="h-3 bg-ink-100 animate-pulse rounded-none w-40 mb-6" />
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="border border-ink-100 overflow-hidden" style={{ animationDelay: `${i * 100}ms` }}>
+        <div key={i} className="border border-ink-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-ink-100 bg-white">
             <div className="h-3 bg-ink-100 animate-pulse w-48 rounded-none" />
           </div>
@@ -300,6 +406,15 @@ function ExternalIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
       <path d="M1 9L9 1M9 1H4M9 1V6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+      <circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M12 12L16 16" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }
