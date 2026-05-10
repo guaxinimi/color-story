@@ -47,6 +47,17 @@ function colorDist(a: RGB, b: RGB): number {
   return Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2);
 }
 
+// Count visually distinct colors: greedy clustering where anything within
+// `threshold` RGB distance of an existing representative is the same color.
+function distinctColorCount(palette: Color[], threshold = 40): number {
+  const reps: RGB[] = [];
+  for (const c of palette) {
+    const rgb = hexToRgb(c.hex());
+    if (reps.every(r => colorDist(rgb, r) >= threshold)) reps.push(rgb);
+  }
+  return reps.length;
+}
+
 export default function ImagePaletteCard({
   url, alt, caption, index, topic,
   paletteSize, excludeGrayscale, excludeBackground,
@@ -90,6 +101,12 @@ export default function ImagePaletteCard({
     return filtered.length > 0 ? filtered : rawPalette;
   }, [rawPalette, bgColor, excludeBackground]);
 
+  // Images with ≤ 2 distinct colors are simple logos/icons — always skip them
+  const isLowVariety = useMemo(
+    () => rawPalette.length > 0 && distinctColorCount(rawPalette) <= 2,
+    [rawPalette],
+  );
+
   // Average saturation of the raw palette — used for grayscale detection
   const isGrayscale = useMemo(() => {
     if (rawPalette.length === 0) return false;
@@ -117,6 +134,8 @@ export default function ImagePaletteCard({
     } catch {}
   }, [saved, displayPalette, topic, url]);
 
+  // Always hide low-variety images (logos/icons with ≤ 2 distinct colors)
+  if (isLowVariety && phase === "done") return null;
   // Hide grayscale images when filter is active
   if (excludeGrayscale && isGrayscale && phase === "done") return null;
 
