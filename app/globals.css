@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    background-color: #F7F3EC;
+    color: #1A1714;
+  }
+
+  ::selection {
+    background-color: #C4846A;
+    color: #FDFAF6;
+  }
+
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .divider {
+    @apply border-t border-ink-100;
+  }
+
+  .label-uppercase {
+    @apply font-sans text-xs tracking-widest uppercase text-ink-300;
+  }
+}
