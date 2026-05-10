@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import type { Color } from "colorthief";
 import type { SavedPalette } from "@/types/palette";
 import { PALETTE_STORAGE_KEY } from "@/types/palette";
+import { hexToRgb, rgbToHsl } from "@/lib/colorUtils";
 
 interface Props {
   url: string;
@@ -11,61 +12,115 @@ interface Props {
   caption?: string;
   index: number;
   topic: string;
+  paletteSize: number;
+  excludeGrayscale: boolean;
+  excludeBackground: boolean;
 }
 
 type Phase = "loading" | "extracting" | "done" | "error";
 
-export default function ImagePaletteCard({ url, alt, caption, index, topic }: Props) {
+type RGB = [number, number, number];
+
+// Sample 4 corner patches to estimate background color
+function sampleCorners(img: HTMLImageElement): RGB | null {
+  try {
+    const { naturalWidth: w, naturalHeight: h } = img;
+    if (!w || !h) return null;
+    const sz = Math.min(10, w, h);
+    const canvas = document.createElement("canvas");
+    canvas.width = sz * 2;
+    canvas.height = sz * 2;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img,     0,     0, sz, sz,  0,  0, sz, sz);
+    ctx.drawImage(img, w - sz,     0, sz, sz, sz,  0, sz, sz);
+    ctx.drawImage(img,     0, h - sz, sz, sz,  0, sz, sz, sz);
+    ctx.drawImage(img, w - sz, h - sz, sz, sz, sz, sz, sz, sz);
+    const { data } = ctx.getImageData(0, 0, sz * 2, sz * 2);
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i+1]; b += data[i+2]; n++; }
+    return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+  } catch { return null; }
+}
+
+function colorDist(a: RGB, b: RGB): number {
+  return Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2);
+}
+
+export default function ImagePaletteCard({
+  url, alt, caption, index, topic,
+  paletteSize, excludeGrayscale, excludeBackground,
+}: Props) {
   const imgRef = useRef<HTMLImageElement>(null);
-  const [palette, setPalette] = useState<Color[]>([]);
-  const [phase, setPhase] = useState<Phase>("loading");
-  const [saved, setSaved] = useState(false);
+  const [rawPalette, setRawPalette] = useState<Color[]>([]);
+  const [bgColor, setBgColor]       = useState<RGB | null>(null);
+  const [phase, setPhase]           = useState<Phase>("loading");
+  const [saved, setSaved]           = useState(false);
 
   const extract = useCallback(async () => {
     const img = imgRef.current;
     if (!img) return;
     setPhase("extracting");
     try {
+      setBgColor(sampleCorners(img));
       const { getPaletteSync } = await import("colorthief");
-      const colors = getPaletteSync(img, { colorCount: 6 });
+      const colors = getPaletteSync(img, { colorCount: paletteSize });
       if (!colors || colors.length === 0) { setPhase("error"); return; }
-      setPalette(colors);
+      setRawPalette(colors);
       setPhase("done");
-    } catch {
-      setPhase("error");
-    }
-  }, []);
+    } catch { setPhase("error"); }
+  }, [paletteSize]);
 
   // Check saved state once extraction completes
   useEffect(() => {
     if (phase !== "done") return;
     try {
-      const existing: SavedPalette[] = JSON.parse(
-        localStorage.getItem(PALETTE_STORAGE_KEY) ?? "[]"
-      );
+      const existing: SavedPalette[] = JSON.parse(localStorage.getItem(PALETTE_STORAGE_KEY) ?? "[]");
       setSaved(existing.some(p => p.topic === topic && p.imageUrl === url));
     } catch {}
   }, [phase, topic, url]);
 
+  // Background-filtered palette (falls back to raw if all colors are removed)
+  const displayPalette = useMemo(() => {
+    if (!excludeBackground || !bgColor || rawPalette.length === 0) return rawPalette;
+    const filtered = rawPalette.filter(c => {
+      const rgb = hexToRgb(c.hex());
+      return colorDist(rgb, bgColor) > 40;
+    });
+    return filtered.length > 0 ? filtered : rawPalette;
+  }, [rawPalette, bgColor, excludeBackground]);
+
+  // Average saturation of the raw palette — used for grayscale detection
+  const isGrayscale = useMemo(() => {
+    if (rawPalette.length === 0) return false;
+    const avgSat = rawPalette.reduce((sum, c) => {
+      const [r, g, b] = hexToRgb(c.hex());
+      const [, s] = rgbToHsl(r, g, b);
+      return sum + s;
+    }, 0) / rawPalette.length;
+    return avgSat < 0.15;
+  }, [rawPalette]);
+
   const handleSave = useCallback(() => {
-    if (saved || palette.length === 0) return;
+    if (saved || displayPalette.length === 0) return;
     const entry: SavedPalette = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       topic,
       imageUrl: url,
-      colors: palette.map(c => c.hex().toUpperCase()),
+      colors: displayPalette.map(c => c.hex().toUpperCase()),
       savedAt: new Date().toISOString(),
     };
     try {
-      const existing: SavedPalette[] = JSON.parse(
-        localStorage.getItem(PALETTE_STORAGE_KEY) ?? "[]"
-      );
+      const existing: SavedPalette[] = JSON.parse(localStorage.getItem(PALETTE_STORAGE_KEY) ?? "[]");
       localStorage.setItem(PALETTE_STORAGE_KEY, JSON.stringify([entry, ...existing]));
       setSaved(true);
     } catch {}
-  }, [saved, palette, topic, url]);
+  }, [saved, displayPalette, topic, url]);
 
-  const ready = phase === "done" && palette.length > 0;
+  // Hide grayscale images when filter is active
+  if (excludeGrayscale && isGrayscale && phase === "done") return null;
+
+  const ready = phase === "done" && displayPalette.length > 0;
 
   return (
     <article className="border border-ink-100 bg-white overflow-hidden">
@@ -98,7 +153,7 @@ export default function ImagePaletteCard({ url, alt, caption, index, topic }: Pr
 
       {/* Two-column layout: image | swatches */}
       <div className="flex flex-col sm:flex-row">
-        {/* ── Image panel ── */}
+        {/* Image panel */}
         <div className="sm:w-[58%] relative bg-parchment-200 flex items-center justify-center min-h-[200px] sm:min-h-[300px] overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -115,10 +170,10 @@ export default function ImagePaletteCard({ url, alt, caption, index, topic }: Pr
           )}
         </div>
 
-        {/* ── Palette panel ── */}
+        {/* Palette panel */}
         <div className="sm:w-[42%] flex flex-col min-h-[100px] sm:min-h-[300px]">
           {ready ? (
-            <SwatchStrip colors={palette} />
+            <SwatchStrip colors={displayPalette} />
           ) : phase === "error" ? (
             <ErrorPanel />
           ) : (
@@ -184,10 +239,7 @@ function ErrorPanel() {
 function SaveIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-      <path
-        d="M9.5 10.5H2.5C1.95 10.5 1.5 10.05 1.5 9.5V2.5C1.5 1.95 1.95 1.5 2.5 1.5H8L10.5 4V9.5C10.5 10.05 10.05 10.5 9.5 10.5Z"
-        stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"
-      />
+      <path d="M9.5 10.5H2.5C1.95 10.5 1.5 10.05 1.5 9.5V2.5C1.5 1.95 1.95 1.5 2.5 1.5H8L10.5 4V9.5C10.5 10.05 10.05 10.5 9.5 10.5Z" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M4 1.5V4.5H8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
       <path d="M3.5 10.5V7H8.5V10.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
     </svg>

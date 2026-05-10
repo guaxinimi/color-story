@@ -16,7 +16,7 @@ export function hexToRgb(hex: string): RGB {
   ];
 }
 
-function rgbToHsl(r: number, g: number, b: number): HSL {
+export function rgbToHsl(r: number, g: number, b: number): HSL {
   const rn = r / 255, gn = g / 255, bn = b / 255;
   const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
   const l = (max + min) / 2;

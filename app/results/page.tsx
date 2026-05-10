@@ -1,16 +1,12 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import ImagePaletteCard from "@/components/ImagePaletteCard";
 
-interface PaletteImage {
-  url: string;
-  alt: string;
-  caption: string;
-}
+interface PaletteImage { url: string; alt: string; caption: string }
 
 interface PaletteData {
   title: string;
@@ -23,16 +19,27 @@ function ResultsContent() {
   const params = useSearchParams();
   const query = params.get("q") ?? "";
 
-  const [data, setData] = useState<PaletteData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [data, setData]       = useState<PaletteData | null>(null);
+  const [error, setError]     = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Controls
+  const [paletteSizeUI, setPaletteSizeUI] = useState(6);
+  const [paletteSize, setPaletteSize]     = useState(6); // debounced
+  const [excludeGrayscale, setExcludeGrayscale]   = useState(false);
+  const [excludeBackground, setExcludeBackground] = useState(false);
+
+  // Debounce palette size — avoids re-extraction on every slider tick
+  useEffect(() => {
+    const t = setTimeout(() => setPaletteSize(paletteSizeUI), 350);
+    return () => clearTimeout(t);
+  }, [paletteSizeUI]);
 
   useEffect(() => {
     if (!query) return;
     setLoading(true);
     setError(null);
     setData(null);
-
     fetch(`/api/palette?q=${encodeURIComponent(query)}`)
       .then(async res => {
         const json = await res.json();
@@ -43,6 +50,15 @@ function ResultsContent() {
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, [query]);
+
+  // Randomly select 5 from up to 20 candidates — fresh selection each new search
+  const selectedImages = useMemo(() => {
+    if (!data?.images?.length) return [];
+    const shuffled = [...data.images].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, 5);
+  }, [data?.images]);
+
+  const hasResults = !loading && !!data && data.images.length > 0;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -115,25 +131,63 @@ function ResultsContent() {
             />
           )}
 
-          {!loading && data && data.images.length > 0 && (
+          {hasResults && (
             <div className="space-y-6">
+
+              {/* Controls */}
+              <div className="flex flex-wrap items-center gap-x-8 gap-y-4 py-4 border-b border-ink-100">
+                <div className="flex items-center gap-3">
+                  <span className="label-uppercase whitespace-nowrap">Palette size</span>
+                  <input
+                    type="range"
+                    min={3}
+                    max={10}
+                    step={1}
+                    value={paletteSizeUI}
+                    onChange={e => setPaletteSizeUI(Number(e.target.value))}
+                    className="w-28 accent-ink-900 cursor-pointer"
+                  />
+                  <span className="font-mono text-[11px] text-ink-500 w-3 text-right tabular-nums">
+                    {paletteSizeUI}
+                  </span>
+                </div>
+                <Toggle
+                  checked={excludeGrayscale}
+                  onChange={setExcludeGrayscale}
+                  label="Exclude grayscale & sepia"
+                />
+                <Toggle
+                  checked={excludeBackground}
+                  onChange={setExcludeBackground}
+                  label="Exclude background colors"
+                />
+              </div>
+
+              {/* Metadata row */}
               <p className="label-uppercase">
-                {data.images.length} image{data.images.length !== 1 ? "s" : ""}
-                &nbsp;&middot;&nbsp;6-color palette each
+                {selectedImages.length} image{selectedImages.length !== 1 ? "s" : ""}
+                &nbsp;&middot;&nbsp;{paletteSizeUI}-color palette each
+                &nbsp;&middot;&nbsp;drawn from {data.images.length} Wikimedia candidates
               </p>
+
+              {/* Cards */}
               <div className="space-y-4">
-                {data.images.map((img, i) => (
+                {selectedImages.map((img, i) => (
                   <div
                     key={img.url}
                     className="animate-fade-up"
                     style={{ animationDelay: `${i * 90}ms` }}
                   >
                     <ImagePaletteCard
+                      key={`${img.url}-${paletteSize}`}
                       url={img.url}
                       alt={img.alt}
                       caption={img.caption}
                       index={i}
                       topic={data.title}
+                      paletteSize={paletteSize}
+                      excludeGrayscale={excludeGrayscale}
+                      excludeBackground={excludeBackground}
                     />
                   </div>
                 ))}
@@ -161,7 +215,43 @@ function ResultsContent() {
   );
 }
 
-/* ── Helper components ── */
+/* ── Toggle ── */
+
+function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-2.5 group"
+    >
+      <div
+        className={`relative w-8 h-4 rounded-full transition-colors duration-200 shrink-0 ${
+          checked ? "bg-ink-900" : "bg-ink-100"
+        }`}
+      >
+        <div
+          className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+            checked ? "translate-x-4" : "translate-x-0.5"
+          }`}
+        />
+      </div>
+      <span className="label-uppercase group-hover:text-ink-700 transition-colors">
+        {label}
+      </span>
+    </button>
+  );
+}
+
+/* ── Skeleton / empty states ── */
 
 function HeaderSkeleton() {
   return (
@@ -227,13 +317,7 @@ function EmptyState({ heading, body }: { heading: string; body: string }) {
 function BackArrow() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-      <path
-        d="M11 6H1M5 1L1 6L5 11"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M11 6H1M5 1L1 6L5 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -241,13 +325,7 @@ function BackArrow() {
 function ExternalIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-      <path
-        d="M1 9L9 1M9 1H4M9 1V6"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M1 9L9 1M9 1H4M9 1V6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
