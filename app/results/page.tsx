@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, useMemo } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Nav from "@/components/Nav";
@@ -25,8 +25,7 @@ function ResultsContent() {
 
   // Controls
   const [paletteSizeUI, setPaletteSizeUI] = useState(6);
-  const [paletteSize, setPaletteSize]     = useState(6); // debounced
-  const [excludeGrayscale, setExcludeGrayscale]   = useState(false);
+  const [paletteSize, setPaletteSize]     = useState(6);
   const [excludeBackground, setExcludeBackground] = useState(false);
 
   // Debounce palette size — avoids re-extraction on every slider tick
@@ -51,12 +50,30 @@ function ResultsContent() {
       .finally(() => setLoading(false));
   }, [query]);
 
-  // Randomly select 5 from up to 20 candidates — fresh selection each new search
-  const selectedImages = useMemo(() => {
-    if (!data?.images?.length) return [];
+  // Active images shown + candidate queue for replacements
+  const [activeImages, setActiveImages]   = useState<PaletteImage[]>([]);
+  const [candidateQueue, setCandidateQueue] = useState<PaletteImage[]>([]);
+
+  // Initialise on new data — shuffle all 20, show first 5, queue the rest
+  useEffect(() => {
+    if (!data?.images?.length) { setActiveImages([]); setCandidateQueue([]); return; }
     const shuffled = [...data.images].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 5);
+    setActiveImages(shuffled.slice(0, 5));
+    setCandidateQueue(shuffled.slice(5));
   }, [data?.images]);
+
+  // When a card fails quality checks, replace it with the next candidate
+  const handleFiltered = useCallback((filteredUrl: string) => {
+    setCandidateQueue(prev => {
+      const [next, ...rest] = prev;
+      if (!next) {
+        setActiveImages(imgs => imgs.filter(i => i.url !== filteredUrl));
+        return [];
+      }
+      setActiveImages(imgs => imgs.map(i => i.url === filteredUrl ? next : i));
+      return rest;
+    });
+  }, []);
 
   const hasResults = !loading && !!data && data.images.length > 0;
 
@@ -152,11 +169,6 @@ function ResultsContent() {
                   </span>
                 </div>
                 <Toggle
-                  checked={excludeGrayscale}
-                  onChange={setExcludeGrayscale}
-                  label="Exclude grayscale & sepia"
-                />
-                <Toggle
                   checked={excludeBackground}
                   onChange={setExcludeBackground}
                   label="Exclude background colors"
@@ -165,14 +177,14 @@ function ResultsContent() {
 
               {/* Metadata row */}
               <p className="label-uppercase">
-                {selectedImages.length} image{selectedImages.length !== 1 ? "s" : ""}
+                {activeImages.length} image{activeImages.length !== 1 ? "s" : ""}
                 &nbsp;&middot;&nbsp;{paletteSizeUI}-color palette each
                 &nbsp;&middot;&nbsp;drawn from {data.images.length} Wikimedia candidates
               </p>
 
-              {/* Cards */}
+              {/* Cards — keyed by url so replacement triggers fade-up re-entrance */}
               <div className="space-y-4">
-                {selectedImages.map((img, i) => (
+                {activeImages.map((img, i) => (
                   <div
                     key={img.url}
                     className="animate-fade-up"
@@ -186,8 +198,8 @@ function ResultsContent() {
                       index={i}
                       topic={data.title}
                       paletteSize={paletteSize}
-                      excludeGrayscale={excludeGrayscale}
                       excludeBackground={excludeBackground}
+                      onFiltered={() => handleFiltered(img.url)}
                     />
                   </div>
                 ))}
@@ -218,35 +230,14 @@ function ResultsContent() {
 /* ── Toggle ── */
 
 function Toggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
+  checked, onChange, label,
+}: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <button
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className="flex items-center gap-2.5 group"
-    >
-      <div
-        className={`relative w-8 h-4 rounded-full transition-colors duration-200 shrink-0 ${
-          checked ? "bg-ink-900" : "bg-ink-100"
-        }`}
-      >
-        <div
-          className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-200 ${
-            checked ? "translate-x-4" : "translate-x-0.5"
-          }`}
-        />
+    <button role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="flex items-center gap-2.5 group">
+      <div className={`relative w-8 h-4 rounded-full transition-colors duration-200 shrink-0 ${checked ? "bg-ink-900" : "bg-ink-100"}`}>
+        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-200 ${checked ? "translate-x-4" : "translate-x-0.5"}`} />
       </div>
-      <span className="label-uppercase group-hover:text-ink-700 transition-colors">
-        {label}
-      </span>
+      <span className="label-uppercase group-hover:text-ink-700 transition-colors">{label}</span>
     </button>
   );
 }
@@ -270,11 +261,7 @@ function LoadingSkeleton() {
     <div className="space-y-4">
       <div className="h-3 bg-ink-100 animate-pulse rounded-none w-40 mb-6" />
       {Array.from({ length: 3 }).map((_, i) => (
-        <div
-          key={i}
-          className="border border-ink-100 overflow-hidden"
-          style={{ animationDelay: `${i * 100}ms` }}
-        >
+        <div key={i} className="border border-ink-100 overflow-hidden" style={{ animationDelay: `${i * 100}ms` }}>
           <div className="px-5 py-4 border-b border-ink-100 bg-white">
             <div className="h-3 bg-ink-100 animate-pulse w-48 rounded-none" />
           </div>
@@ -282,11 +269,7 @@ function LoadingSkeleton() {
             <div className="sm:w-[58%] h-[200px] sm:h-[260px] bg-parchment-200 animate-pulse" />
             <div className="sm:w-[42%] h-[100px] sm:h-[260px] flex">
               {Array.from({ length: 6 }).map((_, j) => (
-                <div
-                  key={j}
-                  className="flex-1 bg-parchment-300 animate-pulse"
-                  style={{ animationDelay: `${j * 50}ms` }}
-                />
+                <div key={j} className="flex-1 bg-parchment-300 animate-pulse" style={{ animationDelay: `${j * 50}ms` }} />
               ))}
             </div>
           </div>
@@ -300,13 +283,8 @@ function EmptyState({ heading, body }: { heading: string; body: string }) {
   return (
     <div className="py-20 text-center space-y-4">
       <p className="font-serif text-2xl text-ink-700">{heading}</p>
-      <p className="font-sans text-sm text-ink-500 font-light max-w-xs mx-auto leading-relaxed">
-        {body}
-      </p>
-      <Link
-        href="/"
-        className="label-uppercase inline-flex items-center gap-2 mt-6 hover:text-ink-700 transition-colors"
-      >
+      <p className="font-sans text-sm text-ink-500 font-light max-w-xs mx-auto leading-relaxed">{body}</p>
+      <Link href="/" className="label-uppercase inline-flex items-center gap-2 mt-6 hover:text-ink-700 transition-colors">
         <BackArrow />
         Back to search
       </Link>

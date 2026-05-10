@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 
@@ -15,15 +15,44 @@ const MORE_TOPICS = [
 ];
 
 export default function Home() {
-  const [query, setQuery] = useState("");
+  const [query, setQuery]           = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [activeIdx, setActiveIdx]   = useState(-1);
   const router = useRouter();
+
+  const navigate = (q: string) => {
+    setShowDropdown(false);
+    router.push(`/results?q=${encodeURIComponent(q.trim())}`);
+  };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    router.push(`/results?q=${encodeURIComponent(trimmed)}`);
+    if (activeIdx >= 0 && suggestions[activeIdx]) {
+      navigate(suggestions[activeIdx]);
+    } else if (query.trim()) {
+      navigate(query.trim());
+    }
   };
+
+  // Debounced Wikipedia opensearch for autocomplete
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setSuggestions([]); setShowDropdown(false); return; }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(q)}&limit=6&namespace=0&format=json&origin=*`
+        );
+        const data = await res.json();
+        const titles: string[] = data[1] ?? [];
+        setSuggestions(titles);
+        setShowDropdown(titles.length > 0);
+        setActiveIdx(-1);
+      } catch { /* ignore network errors */ }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -57,18 +86,32 @@ export default function Home() {
                 <input
                   type="text"
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => { setQuery(e.target.value); setActiveIdx(-1); }}
+                  onFocus={() => { if (suggestions.length > 0) setShowDropdown(true); }}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                  onKeyDown={(e) => {
+                    if (!showDropdown || suggestions.length === 0) return;
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setActiveIdx(i => Math.min(i + 1, suggestions.length - 1));
+                    } else if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setActiveIdx(i => Math.max(i - 1, -1));
+                    } else if (e.key === "Escape") {
+                      setShowDropdown(false);
+                      setActiveIdx(-1);
+                    }
+                  }}
                   placeholder="Try 'Frida Kahlo' or 'Autumn in Japan'…"
                   className="
                     w-full px-6 py-4 pr-14
                     bg-white border border-ink-100
                     font-sans text-base text-ink-900 placeholder-ink-300
-                    rounded-none
-                    shadow-sm
-                    outline-none
+                    rounded-none shadow-sm outline-none
                     focus:border-ink-700
                     transition-colors duration-200
                   "
+                  autoComplete="off"
                   autoFocus
                 />
                 <button
@@ -84,6 +127,33 @@ export default function Home() {
                 >
                   <SearchIcon />
                 </button>
+
+                {/* Autocomplete dropdown */}
+                {showDropdown && suggestions.length > 0 && (
+                  <ul
+                    role="listbox"
+                    className="absolute top-full left-0 right-0 z-50 bg-white border border-t-0 border-ink-100 shadow-lg"
+                  >
+                    {suggestions.map((s, i) => (
+                      <li key={s} role="option" aria-selected={i === activeIdx}>
+                        <button
+                          type="button"
+                          className={`
+                            w-full text-left px-6 py-2.5
+                            font-sans text-sm transition-colors duration-100
+                            ${i === activeIdx
+                              ? "bg-parchment-100 text-ink-900"
+                              : "text-ink-700 hover:bg-parchment-50 hover:text-ink-900"
+                            }
+                          `}
+                          onMouseDown={(e) => { e.preventDefault(); navigate(s); }}
+                        >
+                          {s}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </form>
 

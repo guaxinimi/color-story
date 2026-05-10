@@ -13,15 +13,14 @@ interface Props {
   index: number;
   topic: string;
   paletteSize: number;
-  excludeGrayscale: boolean;
   excludeBackground: boolean;
+  onFiltered?: () => void; // called when this image fails quality checks
 }
 
 type Phase = "loading" | "extracting" | "done" | "error";
-
 type RGB = [number, number, number];
 
-// Sample 4 corner patches to estimate background color
+// Draw 4 corner patches into a tiny canvas and average their pixels
 function sampleCorners(img: HTMLImageElement): RGB | null {
   try {
     const { naturalWidth: w, naturalHeight: h } = img;
@@ -47,8 +46,7 @@ function colorDist(a: RGB, b: RGB): number {
   return Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2);
 }
 
-// Count visually distinct colors: greedy clustering where anything within
-// `threshold` RGB distance of an existing representative is the same color.
+// Count visually distinct color clusters (greedy, threshold = RGB distance)
 function distinctColorCount(palette: Color[], threshold = 40): number {
   const reps: RGB[] = [];
   for (const c of palette) {
@@ -58,9 +56,19 @@ function distinctColorCount(palette: Color[], threshold = 40): number {
   return reps.length;
 }
 
+// Average HSL saturation of a palette
+function avgSaturation(palette: Color[]): number {
+  if (palette.length === 0) return 0;
+  return palette.reduce((sum, c) => {
+    const [r, g, b] = hexToRgb(c.hex());
+    const [, s] = rgbToHsl(r, g, b);
+    return sum + s;
+  }, 0) / palette.length;
+}
+
 export default function ImagePaletteCard({
   url, alt, caption, index, topic,
-  paletteSize, excludeGrayscale, excludeBackground,
+  paletteSize, excludeBackground, onFiltered,
 }: Props) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [rawPalette, setRawPalette] = useState<Color[]>([]);
@@ -73,14 +81,25 @@ export default function ImagePaletteCard({
     if (!img) return;
     setPhase("extracting");
     try {
-      setBgColor(sampleCorners(img));
+      const bg = sampleCorners(img);
+      setBgColor(bg);
+
       const { getPaletteSync } = await import("colorthief");
       const colors = getPaletteSync(img, { colorCount: paletteSize });
       if (!colors || colors.length === 0) { setPhase("error"); return; }
+
+      // Quality gates — silently signal replacement rather than showing a bad palette
+      const sat   = avgSaturation(colors);
+      const dists = distinctColorCount(colors);
+      if (sat < 0.12 || dists <= 2) {
+        onFiltered?.();
+        return; // stay in "extracting" phase — parent will unmount us
+      }
+
       setRawPalette(colors);
       setPhase("done");
     } catch { setPhase("error"); }
-  }, [paletteSize]);
+  }, [paletteSize, onFiltered]);
 
   // Check saved state once extraction completes
   useEffect(() => {
@@ -91,32 +110,12 @@ export default function ImagePaletteCard({
     } catch {}
   }, [phase, topic, url]);
 
-  // Background-filtered palette (falls back to raw if all colors are removed)
+  // Background-filtered display palette (falls back to raw if all colors removed)
   const displayPalette = useMemo(() => {
     if (!excludeBackground || !bgColor || rawPalette.length === 0) return rawPalette;
-    const filtered = rawPalette.filter(c => {
-      const rgb = hexToRgb(c.hex());
-      return colorDist(rgb, bgColor) > 40;
-    });
+    const filtered = rawPalette.filter(c => colorDist(hexToRgb(c.hex()), bgColor) > 40);
     return filtered.length > 0 ? filtered : rawPalette;
   }, [rawPalette, bgColor, excludeBackground]);
-
-  // Images with ≤ 2 distinct colors are simple logos/icons — always skip them
-  const isLowVariety = useMemo(
-    () => rawPalette.length > 0 && distinctColorCount(rawPalette) <= 2,
-    [rawPalette],
-  );
-
-  // Average saturation of the raw palette — used for grayscale detection
-  const isGrayscale = useMemo(() => {
-    if (rawPalette.length === 0) return false;
-    const avgSat = rawPalette.reduce((sum, c) => {
-      const [r, g, b] = hexToRgb(c.hex());
-      const [, s] = rgbToHsl(r, g, b);
-      return sum + s;
-    }, 0) / rawPalette.length;
-    return avgSat < 0.15;
-  }, [rawPalette]);
 
   const handleSave = useCallback(() => {
     if (saved || displayPalette.length === 0) return;
@@ -133,11 +132,6 @@ export default function ImagePaletteCard({
       setSaved(true);
     } catch {}
   }, [saved, displayPalette, topic, url]);
-
-  // Always hide low-variety images (logos/icons with ≤ 2 distinct colors)
-  if (isLowVariety && phase === "done") return null;
-  // Hide grayscale images when filter is active
-  if (excludeGrayscale && isGrayscale && phase === "done") return null;
 
   const ready = phase === "done" && displayPalette.length > 0;
 
@@ -237,11 +231,7 @@ function SkeletonStrip() {
   return (
     <div className="flex flex-1">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div
-          key={i}
-          className="flex-1 bg-parchment-300 animate-pulse"
-          style={{ animationDelay: `${i * 60}ms` }}
-        />
+        <div key={i} className="flex-1 bg-parchment-300 animate-pulse" style={{ animationDelay: `${i * 60}ms` }} />
       ))}
     </div>
   );
