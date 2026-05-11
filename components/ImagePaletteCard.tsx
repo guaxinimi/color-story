@@ -134,7 +134,7 @@ export default function ImagePaletteCard({
       // Quality gates — silently replace via onFiltered if image is too flat/gray
       const sat    = avgSaturation(candidates);
       const dists  = distinctColorCount(candidates);
-      const grayThreshold = excludeGrayscale ? 0.15 : 0.06;
+      const grayThreshold = excludeGrayscale ? 0.30 : 0.15;
       if (sat < grayThreshold || dists <= 2) { onFiltered?.(); return; }
 
       // Select a maximally diverse subset, seeded by the most vivid color
