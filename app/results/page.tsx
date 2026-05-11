@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback, Fragment } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef, Fragment } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Nav from "@/components/Nav";
@@ -32,13 +32,29 @@ function ResultsContent() {
   const [excludeBackground, setExcludeBackground] = useState(() => params.get("exbg")   === "1");
 
   // Search bar state
+  const [searchActive, setSearchActive] = useState(false);
   const [inputQuery, setInputQuery]     = useState(query);
   const [suggestions, setSuggestions]   = useState<string[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeIdx, setActiveIdx]       = useState(-1);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Sync input when URL query changes
-  useEffect(() => { setInputQuery(query); }, [query]);
+  useEffect(() => { setInputQuery(query); setSearchActive(false); }, [query]);
+
+  const activateSearch = useCallback(() => {
+    setSearchActive(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
+  const deactivateSearch = useCallback(() => {
+    setTimeout(() => {
+      setShowDropdown(false);
+      setSearchActive(false);
+      setInputQuery(query);
+      setActiveIdx(-1);
+    }, 150);
+  }, [query]);
 
   // Debounce palette size
   useEffect(() => {
@@ -132,58 +148,71 @@ function ResultsContent() {
       <section className="border-b border-ink-100 py-8 px-6">
         <div className="max-w-5xl mx-auto space-y-5">
 
-          {/* Search bar */}
-          <form onSubmit={handleSearch} className="w-full max-w-xl">
-            <div className="relative">
-              <input
-                type="text"
-                value={inputQuery}
-                onChange={e => { setInputQuery(e.target.value); setActiveIdx(-1); }}
-                onFocus={() => { if (suggestions.length > 0) setShowDropdown(true); }}
-                onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
-                onKeyDown={e => {
-                  if (!showDropdown || !suggestions.length) return;
-                  if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i+1, suggestions.length-1)); }
-                  else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(i-1, -1)); }
-                  else if (e.key === "Escape") { setShowDropdown(false); setActiveIdx(-1); }
-                }}
-                placeholder="Search another topic…"
-                autoComplete="off"
-                className="
-                  w-full pl-4 pr-12 py-2.5
-                  bg-white border border-ink-100
-                  font-sans text-sm text-ink-900 placeholder-ink-300
-                  rounded-none outline-none
-                  focus:border-ink-700 transition-colors duration-200
-                "
-              />
-              <button
-                type="submit"
-                aria-label="Search"
-                className="absolute right-0 top-0 bottom-0 px-3.5 flex items-center text-ink-300 hover:text-ink-900 transition-colors border-l border-ink-100"
-              >
-                <SearchIcon />
-              </button>
+          {/* Search bar — compact when idle, expands on interaction */}
+          {searchActive ? (
+            <form onSubmit={handleSearch} className="w-full max-w-xl">
+              <div className="relative">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputQuery}
+                  onChange={e => { setInputQuery(e.target.value); setActiveIdx(-1); }}
+                  onFocus={() => { if (suggestions.length > 0) setShowDropdown(true); }}
+                  onBlur={deactivateSearch}
+                  onKeyDown={e => {
+                    if (e.key === "Escape") { deactivateSearch(); return; }
+                    if (!showDropdown || !suggestions.length) return;
+                    if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i+1, suggestions.length-1)); }
+                    else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(i-1, -1)); }
+                  }}
+                  placeholder="Search another topic…"
+                  autoComplete="off"
+                  className="
+                    w-full pl-4 pr-12 py-2.5
+                    bg-white border border-ink-700
+                    font-sans text-sm text-ink-900 placeholder-ink-300
+                    rounded-none outline-none transition-colors duration-200
+                  "
+                />
+                <button
+                  type="submit"
+                  aria-label="Search"
+                  className="absolute right-0 top-0 bottom-0 px-3.5 flex items-center text-ink-300 hover:text-ink-900 transition-colors border-l border-ink-100"
+                >
+                  <SearchIcon />
+                </button>
 
-              {showDropdown && suggestions.length > 0 && (
-                <ul role="listbox" className="absolute top-full left-0 right-0 z-50 bg-white border border-t-0 border-ink-100 shadow-lg">
-                  {suggestions.map((s, i) => (
-                    <li key={s} role="option" aria-selected={i === activeIdx}>
-                      <button
-                        type="button"
-                        className={`w-full text-left px-4 py-2 font-sans text-sm transition-colors duration-100 ${
-                          i === activeIdx ? "bg-parchment-100 text-ink-900" : "text-ink-700 hover:bg-parchment-50 hover:text-ink-900"
-                        }`}
-                        onMouseDown={e => { e.preventDefault(); navigateTo(s); }}
-                      >
-                        {s}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </form>
+                {showDropdown && suggestions.length > 0 && (
+                  <ul role="listbox" className="absolute top-full left-0 right-0 z-50 bg-white border border-t-0 border-ink-100 shadow-lg">
+                    {suggestions.map((s, i) => (
+                      <li key={s} role="option" aria-selected={i === activeIdx}>
+                        <button
+                          type="button"
+                          className={`w-full text-left px-4 py-2 font-sans text-sm transition-colors duration-100 ${
+                            i === activeIdx ? "bg-parchment-100 text-ink-900" : "text-ink-700 hover:bg-parchment-50 hover:text-ink-900"
+                          }`}
+                          onMouseDown={e => { e.preventDefault(); navigateTo(s); }}
+                        >
+                          {s}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </form>
+          ) : (
+            <button
+              onClick={activateSearch}
+              className="flex items-center gap-2 text-ink-300 hover:text-ink-700 transition-colors duration-150 group"
+              aria-label="Search another topic"
+            >
+              <SearchIcon />
+              <span className="font-sans text-sm text-ink-300 group-hover:text-ink-700 transition-colors duration-150">
+                Search another topic…
+              </span>
+            </button>
+          )}
 
           {/* Breadcrumb trail — show if 2+ searches in history */}
           {searchHistory.length > 1 && (
