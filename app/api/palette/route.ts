@@ -36,33 +36,6 @@ export async function GET(req: NextRequest) {
 
   const slug = q.replace(/ /g, "_");
 
-  // Wikipedia article images (embedded in the article — highly relevant)
-  const articleImgParams = new URLSearchParams({
-    action: "query",
-    titles: slug,
-    generator: "images",
-    gimlimit: "50",
-    prop: "imageinfo",
-    iiprop: "url|mime|thumburl",
-    iiurlwidth: "900",
-    format: "json",
-    origin: "*",
-  });
-
-  // Commons keyword search (broader, used as supplement)
-  const commonsParams = new URLSearchParams({
-    action: "query",
-    generator: "search",
-    gsrsearch: q,
-    gsrnamespace: "6",
-    gsrlimit: "20",
-    prop: "imageinfo",
-    iiprop: "url|mime|thumburl",
-    iiurlwidth: "900",
-    format: "json",
-    origin: "*",
-  });
-
   // Phase 1: resolve the canonical Wikipedia title (handles redirects + disambiguation)
   const wikiRes = await fetch(
     `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(slug)}`,
@@ -79,49 +52,36 @@ export async function GET(req: NextRequest) {
       title = wiki.title ?? q;
       description = (wiki.extract ?? "").slice(0, 300);
       wikiUrl = wiki.content_urls?.desktop?.page ?? "";
-      // Use the resolved title (e.g. "Hairspray (film)") so we fetch images
-      // from the correct article, not the disambiguation page or product article
       canonicalSlug = title.replace(/ /g, "_");
     } catch {}
   }
 
-  articleImgParams.set("titles", canonicalSlug);
+  // Phase 2: fetch only images that appear in the Wikipedia article itself
+  const articleImgParams = new URLSearchParams({
+    action: "query",
+    titles: canonicalSlug,
+    generator: "images",
+    gimlimit: "50",
+    prop: "imageinfo",
+    iiprop: "url|mime|thumburl",
+    iiurlwidth: "900",
+    format: "json",
+    origin: "*",
+  });
 
-  // Phase 2: fetch article images (using canonical title) + Commons in parallel
-  const [articleImgRes, commonsRes] = await Promise.all([
-    fetch(`https://en.wikipedia.org/w/api.php?${articleImgParams}`, {
-      headers: { "User-Agent": UA },
-      next: { revalidate: 3600 },
-    }),
-    fetch(`https://commons.wikimedia.org/w/api.php?${commonsParams}`, {
-      headers: { "User-Agent": UA },
-      next: { revalidate: 3600 },
-    }),
-  ]);
+  const articleImgRes = await fetch(
+    `https://en.wikipedia.org/w/api.php?${articleImgParams}`,
+    { headers: { "User-Agent": UA }, next: { revalidate: 3600 } }
+  );
 
-  // Primary: images from the Wikipedia article itself
-  let articleImages: PaletteImage[] = [];
+  let images: PaletteImage[] = [];
   if (articleImgRes.ok) {
     try {
       const data = await articleImgRes.json();
       const pages: Record<string, unknown>[] = Object.values(data.query?.pages ?? {});
-      articleImages = filterAndMap(pages);
+      images = filterAndMap(pages).slice(0, 20);
     } catch {}
   }
-
-  // Supplement with Commons search, deduped against article images
-  let commonsImages: PaletteImage[] = [];
-  if (commonsRes.ok) {
-    try {
-      const data = await commonsRes.json();
-      const pages: Record<string, unknown>[] = Object.values(data.query?.pages ?? {});
-      const articleUrls = new Set(articleImages.map(i => i.url));
-      commonsImages = filterAndMap(pages).filter(i => !articleUrls.has(i.url));
-    } catch {}
-  }
-
-  // Article images first (editorial, on-topic), Commons as fallback
-  const images = [...articleImages, ...commonsImages].slice(0, 20);
 
   return NextResponse.json({ title, description, wikiUrl, images });
 }
