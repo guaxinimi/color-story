@@ -63,11 +63,32 @@ export async function GET(req: NextRequest) {
     origin: "*",
   });
 
-  const [wikiRes, articleImgRes, commonsRes] = await Promise.all([
-    fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(slug)}`, {
-      headers: { "User-Agent": UA },
-      next: { revalidate: 3600 },
-    }),
+  // Phase 1: resolve the canonical Wikipedia title (handles redirects + disambiguation)
+  const wikiRes = await fetch(
+    `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(slug)}`,
+    { headers: { "User-Agent": UA }, next: { revalidate: 3600 } }
+  );
+
+  let title = q;
+  let description = "";
+  let wikiUrl = "";
+  let canonicalSlug = slug;
+  if (wikiRes.ok) {
+    try {
+      const wiki = await wikiRes.json();
+      title = wiki.title ?? q;
+      description = (wiki.extract ?? "").slice(0, 300);
+      wikiUrl = wiki.content_urls?.desktop?.page ?? "";
+      // Use the resolved title (e.g. "Hairspray (film)") so we fetch images
+      // from the correct article, not the disambiguation page or product article
+      canonicalSlug = title.replace(/ /g, "_");
+    } catch {}
+  }
+
+  articleImgParams.set("titles", canonicalSlug);
+
+  // Phase 2: fetch article images (using canonical title) + Commons in parallel
+  const [articleImgRes, commonsRes] = await Promise.all([
     fetch(`https://en.wikipedia.org/w/api.php?${articleImgParams}`, {
       headers: { "User-Agent": UA },
       next: { revalidate: 3600 },
@@ -77,18 +98,6 @@ export async function GET(req: NextRequest) {
       next: { revalidate: 3600 },
     }),
   ]);
-
-  let title = q;
-  let description = "";
-  let wikiUrl = "";
-  if (wikiRes.ok) {
-    try {
-      const wiki = await wikiRes.json();
-      title = wiki.title ?? q;
-      description = (wiki.extract ?? "").slice(0, 300);
-      wikiUrl = wiki.content_urls?.desktop?.page ?? "";
-    } catch {}
-  }
 
   // Primary: images from the Wikipedia article itself
   let articleImages: PaletteImage[] = [];
