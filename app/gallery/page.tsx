@@ -88,7 +88,7 @@ function EmptyState() {
         ].map((s, i) => (
           <div
             key={i}
-            className="w-10 opacity-40"
+            className="w-10 opacity-40 rounded-lg"
             style={{ height: s.h, backgroundColor: s.hex }}
           />
         ))}
@@ -104,7 +104,7 @@ function EmptyState() {
 
       <Link
         href="/"
-        className="inline-flex items-center gap-2 px-6 py-3 bg-ink-900 text-parchment-50 font-sans text-sm tracking-wide hover:bg-ink-700 transition-colors duration-200"
+        className="inline-flex items-center gap-2 px-6 py-3 bg-ink-900 text-parchment-50 font-sans text-sm tracking-wide hover:bg-ink-700 transition-colors duration-200 rounded-full"
       >
         Start exploring
         <ArrowRight />
@@ -117,11 +117,11 @@ function GallerySkeleton() {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="bg-white border border-ink-100 overflow-hidden">
+        <div key={i} className="bg-white border border-ink-100 overflow-hidden rounded-2xl">
           <div className="h-24 bg-parchment-300 animate-pulse" />
           <div className="px-5 py-4 space-y-2 border-t border-ink-100">
-            <div className="h-3.5 bg-ink-100 animate-pulse w-32 rounded-none" />
-            <div className="h-2.5 bg-ink-100 animate-pulse w-20 rounded-none" />
+            <div className="h-3.5 bg-ink-100 animate-pulse w-32 rounded-lg" />
+            <div className="h-2.5 bg-ink-100 animate-pulse w-20 rounded-lg" />
           </div>
         </div>
       ))}

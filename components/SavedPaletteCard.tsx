@@ -32,10 +32,10 @@ export default function SavedPaletteCard({ palette, onDelete }: Props) {
 
   return (
     // No overflow-hidden — tooltip must escape the swatch strip boundary
-    <div className="bg-white border border-ink-100 flex flex-col">
+    <div className="bg-white border border-ink-100 flex flex-col rounded-2xl">
 
       {/* ── Swatch strip with per-swatch tooltips ── */}
-      <div className="relative flex h-24">
+      <div className="relative flex h-24 rounded-t-2xl overflow-hidden">
         {palette.colors.map((hex, i) => (
           <SwatchCell
             key={i}
@@ -51,7 +51,7 @@ export default function SavedPaletteCard({ palette, onDelete }: Props) {
         <div className="min-w-0 space-y-1.5">
           {/* Mood tag — eyebrow label */}
           <span
-            className="inline-block font-sans text-[9px] tracking-widest uppercase px-2 py-0.5 leading-none"
+            className="inline-block font-sans text-[9px] tracking-widest uppercase px-2 py-0.5 leading-none rounded-full"
             style={{ backgroundColor: moodStyle.bg, color: moodStyle.text }}
           >
             {mood}
@@ -137,7 +137,7 @@ function SwatchCell({
         <div
           className={`
             absolute top-full mt-1.5 ${align}
-            w-52 bg-white border border-ink-100 shadow-md z-50
+            w-52 bg-white border border-ink-100 shadow-md z-50 rounded-xl
             pointer-events-none
           `}
         >

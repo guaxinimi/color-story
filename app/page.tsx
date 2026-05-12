@@ -101,7 +101,7 @@ export default function Home() {
                       w-full px-6 py-4 pr-14
                       bg-white border border-ink-100
                       font-sans text-base text-ink-900 placeholder-ink-300
-                      rounded-none shadow-sm outline-none
+                      rounded-xl shadow-sm outline-none
                       focus:border-ink-700 transition-colors duration-200
                     "
                     autoComplete="off"
@@ -110,14 +110,14 @@ export default function Home() {
                   <button
                     type="submit"
                     aria-label="Search"
-                    className="absolute right-0 top-0 bottom-0 px-4 flex items-center justify-center text-ink-300 hover:text-ink-900 transition-colors duration-200 border-l border-ink-100"
+                    className="absolute right-0 top-0 bottom-0 px-4 flex items-center justify-center text-ink-300 hover:text-ink-900 transition-colors duration-200 border-l border-ink-100 rounded-r-xl"
                   >
                     <SearchIcon />
                   </button>
 
                   {/* Autocomplete dropdown */}
                   {showDropdown && suggestions.length > 0 && (
-                    <ul role="listbox" className="absolute top-full left-0 right-0 z-50 bg-white border border-t-0 border-ink-100 shadow-lg">
+                    <ul role="listbox" className="absolute top-full left-0 right-0 z-50 bg-white border border-t-0 border-ink-100 shadow-lg rounded-b-xl overflow-hidden">
                       {suggestions.map((s, i) => (
                         <li key={s} role="option" aria-selected={i === activeIdx}>
                           <button
@@ -151,7 +151,7 @@ export default function Home() {
                   <button
                     key={topic}
                     onClick={() => navigate(topic)}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink-900 text-parchment-50 font-sans text-sm tracking-wide hover:bg-ink-700 transition-colors duration-200"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-ink-900 text-parchment-50 font-sans text-sm tracking-wide hover:bg-ink-700 transition-colors duration-200 rounded-full"
                   >
                     {topic}
                     <ArrowRight />
@@ -168,7 +168,7 @@ export default function Home() {
                   <button
                     key={topic}
                     onClick={() => setQuery(topic)}
-                    className="px-4 py-1.5 border border-ink-100 font-sans text-sm text-ink-500 hover:border-ink-700 hover:text-ink-900 transition-colors duration-200 bg-white"
+                    className="px-4 py-1.5 border border-ink-100 font-sans text-sm text-ink-500 hover:border-ink-700 hover:text-ink-900 transition-colors duration-200 bg-white rounded-full"
                   >
                     {topic}
                   </button>

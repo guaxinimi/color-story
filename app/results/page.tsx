@@ -171,19 +171,19 @@ function ResultsContent() {
                     w-full pl-4 pr-12 py-2.5
                     bg-white border border-ink-700
                     font-sans text-sm text-ink-900 placeholder-ink-300
-                    rounded-none outline-none transition-colors duration-200
+                    rounded-xl outline-none transition-colors duration-200
                   "
                 />
                 <button
                   type="submit"
                   aria-label="Search"
-                  className="absolute right-0 top-0 bottom-0 px-3.5 flex items-center text-ink-300 hover:text-ink-900 transition-colors border-l border-ink-100"
+                  className="absolute right-0 top-0 bottom-0 px-3.5 flex items-center text-ink-300 hover:text-ink-900 transition-colors border-l border-ink-100 rounded-r-xl"
                 >
                   <SearchIcon />
                 </button>
 
                 {showDropdown && suggestions.length > 0 && (
-                  <ul role="listbox" className="absolute top-full left-0 right-0 z-50 bg-white border border-t-0 border-ink-100 shadow-lg">
+                  <ul role="listbox" className="absolute top-full left-0 right-0 z-50 bg-white border border-t-0 border-ink-100 shadow-lg rounded-b-xl overflow-hidden">
                     {suggestions.map((s, i) => (
                       <li key={s} role="option" aria-selected={i === activeIdx}>
                         <button
@@ -378,10 +378,10 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 function HeaderSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="h-10 bg-ink-100 animate-pulse rounded-none w-64" />
+      <div className="h-10 bg-ink-100 animate-pulse rounded-lg w-64" />
       <div className="space-y-2">
-        <div className="h-3 bg-ink-100 animate-pulse rounded-none w-full max-w-xl" />
-        <div className="h-3 bg-ink-100 animate-pulse rounded-none w-2/3 max-w-lg" />
+        <div className="h-3 bg-ink-100 animate-pulse rounded-lg w-full max-w-xl" />
+        <div className="h-3 bg-ink-100 animate-pulse rounded-lg w-2/3 max-w-lg" />
       </div>
     </div>
   );
@@ -390,11 +390,11 @@ function HeaderSkeleton() {
 function LoadingSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="h-3 bg-ink-100 animate-pulse rounded-none w-40 mb-6" />
+      <div className="h-3 bg-ink-100 animate-pulse rounded-lg w-40 mb-6" />
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="border border-ink-100 overflow-hidden">
+        <div key={i} className="border border-ink-100 overflow-hidden rounded-2xl">
           <div className="px-5 py-4 border-b border-ink-100 bg-white">
-            <div className="h-3 bg-ink-100 animate-pulse w-48 rounded-none" />
+            <div className="h-3 bg-ink-100 animate-pulse w-48 rounded-lg" />
           </div>
           <div className="flex flex-col sm:flex-row">
             <div className="sm:w-[58%] h-[200px] sm:h-[260px] bg-parchment-200 animate-pulse" />

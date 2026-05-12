@@ -177,7 +177,7 @@ export default function ImagePaletteCard({
   const ready = phase === "done" && displayPalette.length > 0;
 
   return (
-    <article className="border border-ink-100 bg-white overflow-hidden">
+    <article className="border border-ink-100 bg-white overflow-hidden rounded-2xl">
       <div className="px-5 pt-5 pb-3 flex items-center gap-4 border-b border-ink-100">
         <span className="font-serif text-2xl text-ink-100 leading-none tabular-nums select-none shrink-0">
           {String(index + 1).padStart(2, "0")}
