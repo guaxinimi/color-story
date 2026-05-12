@@ -2,32 +2,35 @@
 
 import { useState, useEffect } from "react";
 
-const HISTORY_KEY = "colorstory-search-history";
-const MAX_ITEMS   = 10;
+const MAX_ITEMS = 10;
+
+// Module-level store — survives client-side navigation but clears on full reload
+let memoryHistory: string[] = [];
+const listeners = new Set<(h: string[]) => void>();
+
+function notify() {
+  listeners.forEach(fn => fn([...memoryHistory]));
+}
+
+export function clearSearchHistory() {
+  memoryHistory = [];
+  notify();
+}
 
 export function useSearchHistory(currentQuery: string) {
-  const [history, setHistory]       = useState<string[]>([]);
-  const [storageReady, setStorageReady] = useState(false);
+  const [history, setHistory] = useState<string[]>([...memoryHistory]);
 
-  // Read localStorage once on mount
   useEffect(() => {
-    try {
-      const stored: string[] = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
-      setHistory(stored);
-    } catch {}
-    setStorageReady(true);
+    listeners.add(setHistory);
+    return () => { listeners.delete(setHistory); };
   }, []);
 
-  // Add current query to history once storage is loaded (deduped, most-recent-first)
   useEffect(() => {
-    if (!storageReady || !currentQuery.trim()) return;
-    setHistory(prev => {
-      const deduped = prev.filter(q => q.toLowerCase() !== currentQuery.toLowerCase());
-      const updated = [currentQuery, ...deduped].slice(0, MAX_ITEMS);
-      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-  }, [currentQuery, storageReady]);
+    if (!currentQuery.trim()) return;
+    const deduped = memoryHistory.filter(q => q.toLowerCase() !== currentQuery.toLowerCase());
+    memoryHistory = [currentQuery, ...deduped].slice(0, MAX_ITEMS);
+    notify();
+  }, [currentQuery]);
 
   return history; // most-recent-first
 }

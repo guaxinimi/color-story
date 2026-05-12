@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
+import { clearSearchHistory } from "@/hooks/useSearchHistory";
 
 const FEATURED = ["Frida Kahlo", "Autumn in Japan", "Art Deco"];
 
@@ -22,6 +23,8 @@ export default function Home() {
   const [excludeGrayscale, setExcludeGrayscale]   = useState(false);
   const [excludeBackground, setExcludeBackground] = useState(false);
   const router = useRouter();
+
+  useEffect(() => { clearSearchHistory(); }, []);
 
   const navigate = useCallback((q: string) => {
     const trimmed = q.trim();
