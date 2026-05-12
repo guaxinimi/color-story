@@ -93,30 +93,31 @@ export async function GET(req: NextRequest) {
     } catch {}
   }
 
-  // Phase 3: images from linked articles (cast, director, related topics, etc.)
-  let linkedTitles: string[] = [];
-  if (linksRes.ok) {
+  // Phase 3: only expand to linked articles if the main article doesn't provide enough
+  const ENOUGH = 8;
+  if (images.length < ENOUGH && linksRes.ok) {
+    let linkedTitles: string[] = [];
     try {
-      const data  = await linksRes.json();
-      const page  = Object.values(data.query?.pages ?? {})[0] as Record<string, unknown>;
+      const data = await linksRes.json();
+      const page = Object.values(data.query?.pages ?? {})[0] as Record<string, unknown>;
       linkedTitles = ((page?.links ?? []) as { title: string }[])
         .map(l => l.title)
         .slice(0, 8);
     } catch {}
-  }
 
-  if (linkedTitles.length > 0) {
-    const linkedImgRes = await fetch(
-      `https://en.wikipedia.org/w/api.php?${imgParams(linkedTitles.join("|"))}`,
-      { headers: { "User-Agent": UA }, next: { revalidate: 3600 } }
-    );
-    if (linkedImgRes.ok) {
-      try {
-        const data = await linkedImgRes.json();
-        const linkedImages = filterAndMap(Object.values(data.query?.pages ?? {}));
-        const seen = new Set(images.map(i => i.url));
-        images = [...images, ...linkedImages.filter(i => !seen.has(i.url))];
-      } catch {}
+    if (linkedTitles.length > 0) {
+      const linkedImgRes = await fetch(
+        `https://en.wikipedia.org/w/api.php?${imgParams(linkedTitles.join("|"))}`,
+        { headers: { "User-Agent": UA }, next: { revalidate: 3600 } }
+      );
+      if (linkedImgRes.ok) {
+        try {
+          const data = await linkedImgRes.json();
+          const linkedImages = filterAndMap(Object.values(data.query?.pages ?? {}));
+          const seen = new Set(images.map(i => i.url));
+          images = [...images, ...linkedImages.filter(i => !seen.has(i.url))];
+        } catch {}
+      }
     }
   }
 
